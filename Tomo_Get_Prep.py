@@ -477,6 +477,7 @@ def Correctsuspecttimes(filepath):
   cwd=os.getcwd()
 
   for event in eventsdic:
+    print 'In event %s' %event
     if len(eventsdic[event]) > 1:
 
       #maintime is the most common time; aka the correct time. We loop though all the files and remove those whose starttimes are wrong by a very 
@@ -502,7 +503,7 @@ def Correctsuspecttimes(filepath):
           print 'file %s has time difference < 0.5. Deleting file' %sacfile
           os.system('rm %s' %sacfile)
 
-        os.chdir(cwd)
+    os.chdir(cwd)
 
 
 
