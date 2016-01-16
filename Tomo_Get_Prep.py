@@ -26,11 +26,10 @@ from obspy import read
 import obspy.signal 
 import pylab as plt
 from obspy.taup.taup import getTravelTimes
+from obspy.core.util.geodetics.base import gps2DistAzimuth
 from obspy.core.util import locations2degrees
-from obspy.iris import Client as iclient
 from obspy import UTCDateTime
-IRISclient = iclient()
-FDSNclient = Client('IRIS')
+#FDSNclient = Client('IRIS')
 from collections import Counter
 print 'Done imports'
 
@@ -180,6 +179,8 @@ def findstationnames():
   
 def ProcessLoopS(filepath,stationnames):
     '''File processing loop for S tomography: Take the components and convert to RTZ, and delte the E and N comps'''
+
+    saceditscript = '/data/dna/rmartin/ALASKA/prep_for_tomo/SAC_operations_S.sh'
     
     p = os.getcwd()
     
@@ -189,7 +190,7 @@ def ProcessLoopS(filepath,stationnames):
         Rstream = obspy.Stream()
 
         #Get all SAC files associated with that station
-        sacfiles = reversed(sorted(glob.glob('*.%s..*' %station)))
+        sacfiles = list(reversed(sorted(glob.glob('*.%s..*' %station))))
         saccount = 0
         
         for sacfile in sacfiles:
@@ -204,10 +205,12 @@ def ProcessLoopS(filepath,stationnames):
              stlat = trace[0].stats.sac.stla
              stlon = trace[0].stats.sac.stlo
            
-             dist = locations2degrees(evlat,evlon,stlat,stlon) #find distance from the quake to the station
-             arcs = IRISclient.distaz(stalat=stlat,stalon=stlon,evtlat=evlat,evtlon=evlon)
-             baz = arcs['backazimuth']
-             az = arcs['azimuth']
+             dist = locations2degrees(evlat,evlon,stlat,stlon) #find distance from the quake to the station (in degrees)
+
+             arcs = gps2DistAzimuth(lat1=stlat,lon1=stlon,lat2=evlat,lon2=evlon)
+
+             baz = arcs[1] #This is station-event
+             az = arcs[2] #This is event-station
              
              if evdep > 1e3:
                 evdep = evdep/1000.0;
@@ -242,45 +245,65 @@ def ProcessLoopS(filepath,stationnames):
            trace[0].stats.sac.az = float(az)
            trace[0].stats.sac.baz = float(baz)
 
+           trace[0].stats.sac.o = 0.0 #add origin time
+           trace[0].resample(20) #resample the trace - this sample rate is needed for the cross correlation code
+           trace[0].detrend('demean')
+
            if Ptime > 0:
             trace[0].stats.sac.t1 = Ptime
            if Stime > 0:
             trace[0].stats.sac.t2 = Stime
 
            trace[0].stats.sac.evdp = evdep*1000 #dbpick wants depth to be in meters
-           trace[0].stats.sac.o = 0 #add origin time
 
-           #other operations - remove the mean and resample
-           trace[0].detrend('demean')
-           trace[0].resample(20)
-           
-           if ('BHE' in sacfile) or ('BHN' in sacfile):
-              Rstream += trace
-              #to save disk space, delete the E and N components
-              os.system('rm %s' %sacfile)
-           else:
-              #Write the Z component directly (writes over the existing file)
-              trace.write(sacfile,format='SAC')
-              #print 'Appended arrivals to %s' %sacfile
-           
+           trace.write(sacfile,format='SAC')
+
            saccount += 1
-        
-        #Convert to radial and transverse components
+
         try: 
-           rotstream = Rstream.rotate(method='NE->RT',back_azimuth=baz)
-        
-           for obj in rotstream:
-              nt = obj.stats.network
-              sta = obj.stats.station
-              channel = obj.stats.channel
-              name = "vel."+str(nt)+"."+str(station)+".."+str(channel)
-              obj.write(name,format="SAC")
-              #print 'Written new file %s' %name
+
+          Zfile = sacfiles[0]
+          Nfile = sacfiles[1]
+          Efile = sacfiles[2]
+
+          #Set the component orientations of the files
+          print Zfile,Nfile,Efile
+
+          traceE = read(Efile)
+          traceE[0].stats.sac.cmpinc = 90.0
+          traceE[0].stats.sac.cmpaz = 90.0
+          traceE.write(Efile,format='SAC')
+
+          traceN = read(Nfile)
+          traceN[0].stats.sac.cmpinc = 90.0
+          traceN.write(Nfile,format='SAC')
+
+          #Strict test to ensure the files are read in the correct order
+
+          if ('BHE' not in Efile) or ('BHN' not in Nfile) or ('BHZ' not in Zfile):
+
+            if ('BHR' in Zfile):
+              print 'Skipping: ZRT files already present'
+            else:
+              print 'Components not recognized'
+
+          else:
+
+            basefilename = Efile[:-4]
+
+            #Rotate to GCP (using SAC)
+            os.system('%s %s %s %s' %(saceditscript,Nfile,Efile,basefilename))
+
+            #Save space by removing the N and E comps
+            os.system('rm %s %s' %(Nfile,Efile))
+
         except:
-           print 'Cannot rotate files in Rstream %s' %Rstream
+          print 'Sacfile list: %s does not contain three component data' %str(sacfiles) 
+          continue
+
+        #sys.exit(1)
            
     #create antelope database - just for S waves, which are picked on the traverse.
-    os.system('rm *.01.*')
     os.system('sac2db *.BHT T')
     
 ##########################
@@ -310,10 +333,12 @@ def ProcessLoopP(filepath):
         stlat = trace[0].stats.sac.stla
         stlon = trace[0].stats.sac.stlo
 
-        dist = locations2degrees(evlat,evlon,stlat,stlon) #find distance from the quake to the station
-        arcs = IRISclient.distaz(stalat=stlat,stalon=stlon,evtlat=evlat,evtlon=evlon)
-        az = arcs['backazimuth']
-        baz = arcs['azimuth']
+        dist = locations2degrees(evlat,evlon,stlat,stlon) #find distance from the quake to the station (in degrees)
+
+        arcs = gps2DistAzimuth(lat1=stlat,lon1=stlon,lat2=evlat,lon2=evlon)
+
+        baz = arcs[1] #This is station-event
+        az = arcs[2] #This is event-station
 
         #If we're running this code twice in a row, need to correct the evdep accordingly. The evdep that comes from obspy will be in km, but needs
         #to be in the SAC header in meters. If the depth is already in meters in the SACfile, then it will almost certainly be >1000. This if statement check for 
@@ -367,6 +392,8 @@ def ProcessLoopP(filepath):
 
         trace[0].resample(20)
 
+        #Experimental setup: attempts to automatically pick the P arrivals: In my experience this doesn't work very well
+
         if results.autop:
 
           tracestreamP = trace.copy()
@@ -389,7 +416,7 @@ def ProcessLoopP(filepath):
         #Important - must write to the SAC file!
         trace.write(sacfile,format='SAC')
            
-        print 'Appended arrivals to %s' %sacfile
+        print 'Appended P arrivals to %s' %sacfile
 
       else:
         print 'Found multiple instruments at station %s. Removing all but 1' %(stationname)
@@ -538,21 +565,19 @@ def prepare_files_for_tomo(filepath,filter=True):
     > Create an antelope database associated with each station 
     > Remove data that has not undergone instrument correction
    
-    In future, when we deal with S wave and surface wave tomography, will need to rotate the components and perform other operations
+    This runs the functions 'process loop P' or 'process loop S' depending on what the user has asked for
     '''
-   
-    saceditscript = '/data/dna/rmartin/ALASKA/prep_for_tomo/SAC_operations.sh'
    
     cwd = os.getcwd()
     
-
     try:
       os.chdir(filepath)
     except:
       print 'Specified filepath %s does not appear to exist' %filepath
       sys.exit(1)
     
-    events = glob.glob('20*') #list of all the event directories
+    events = list(sorted(glob.glob('20*'))) #list of all the event directories
+
     for eventdir in events:
     
         os.chdir(eventdir)
@@ -565,7 +590,7 @@ def prepare_files_for_tomo(filepath,filter=True):
            
         
         ####################################
-        #This part will probably need editing in future to make it more general. At the moment its only suited to P tomography
+        #Decide if we're doing P or S wave tomography
         ####################################
         
         
@@ -578,7 +603,10 @@ def prepare_files_for_tomo(filepath,filter=True):
            #P-wave tomo processing function
            ProcessLoopP(filepathdata)
         if results.phase == 'S':
+
+           print eventdir
            stations = findstationnames()
+
            ProcessLoopS(filepathdata,stations)
         
         os.chdir(filepath)
