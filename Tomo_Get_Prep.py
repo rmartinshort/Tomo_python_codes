@@ -29,7 +29,7 @@ from obspy.taup.taup import getTravelTimes
 from obspy.core.util.geodetics.base import gps2DistAzimuth
 from obspy.core.util import locations2degrees
 from obspy import UTCDateTime
-#FDSNclient = Client('IRIS')
+FDSNclient = Client('IRIS')
 from collections import Counter
 print 'Done imports'
 
@@ -238,16 +238,17 @@ def ProcessLoopS(filepath,stationnames):
              try:
                S = Stime
              except:
-               Stime = 0
-             
+               Stime = 0             
             
            #Set the P and S times, and other SAC header data
            trace[0].stats.sac.az = float(az)
            trace[0].stats.sac.baz = float(baz)
 
            trace[0].stats.sac.o = 0.0 #add origin time
-           trace[0].resample(20) #resample the trace - this sample rate is needed for the cross correlation code
-           trace[0].detrend('demean')
+
+           #For some reason, these obspy signal processing steps can be very slow. Using SAC for now. 
+           #trace[0].resample(20) #resample the trace - this sample rate is needed for the cross correlation code
+           #trace[0].detrend('demean')
 
            if Ptime > 0:
             trace[0].stats.sac.t1 = Ptime
@@ -267,7 +268,6 @@ def ProcessLoopS(filepath,stationnames):
           Efile = sacfiles[2]
 
           #Set the component orientations of the files
-          print Zfile,Nfile,Efile
 
           traceE = read(Efile)
           traceE[0].stats.sac.cmpinc = 90.0
