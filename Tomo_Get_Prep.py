@@ -251,9 +251,9 @@ def ProcessLoopS(filepath,stationnames):
            #trace[0].detrend('demean')
 
            if Ptime > 0:
-            trace[0].stats.sac.t1 = Ptime
+            trace[0].stats.sac.user1 = Ptime
            if Stime > 0:
-            trace[0].stats.sac.t2 = Stime
+            trace[0].stats.sac.user2 = Stime
 
            trace[0].stats.sac.evdp = evdep*1000 #dbpick wants depth to be in meters
 
@@ -378,9 +378,9 @@ def ProcessLoopP(filepath):
         trace[0].stats.sac.o = 0.0 #add origin time
         
         if Ptime > 0:
-          trace[0].stats.sac.t1 = Ptime
+          trace[0].stats.sac.user1 = Ptime
         if Stime > 0:
-          trace[0].stats.sac.t2 = Stime
+          trace[0].stats.sac.user1 = Stime
 
         trace[0].stats.sac.evdp = evdep*1000 #dbpick wants depth to be in meters
 
