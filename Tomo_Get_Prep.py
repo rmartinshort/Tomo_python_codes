@@ -21,7 +21,6 @@ import argparse
 
 print 'Importing Obspy modules...'
 from obspy.fdsn import Client
-import obspy
 from obspy import read
 import obspy.signal 
 import pylab as plt
